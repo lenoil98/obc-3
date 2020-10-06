@@ -433,7 +433,7 @@ proc make_body {key action argv} {
 	    return "sp--; sp\[0\].$suffix = $body;"
 	}	    
 	S0 {
-	    return "{ $body; }"
+	    return "{ $body }"
 	}
 	S[123] {
 	    regexp {S(.)} $key _ x
@@ -441,59 +441,59 @@ proc make_body {key action argv} {
                 set j [expr {$x-$i}]
 		regsub -all "\\\$$i" $body "sp\[$j\]" body
 	    }
-	    return "{ $body; } sp += $x;"
+	    return "$body sp += $x;"
 	}
 	S1d {
     	    regsub -all {\$1\.d} $body {getdbl(\&sp[0])} body
-	    return "{ $body; } sp += 2;"
+	    return "$body sp += 2;"
 	}
 	S2d? {
     	    regsub -all {\$1\.d} $body {getdbl(\&sp[1])} body
 	    regsub -all {\$2} $body {sp[0]} body
-	    return "{ $body; } sp += 3;"
+	    return "$body sp += 3;"
 	}
 	S3d?? {
     	    regsub -all {\$1\.d} $body {getdbl(\&sp[2])} body
 	    regsub -all {\$2} $body {sp[1]} body
 	    regsub -all {\$3} $body {sp[0]} body
-	    return "{ $body; } sp += 4;"
+	    return "$body sp += 4;"
 	}
 	S1q {
     	    regsub -all {\$1\.q} $body {getlong(\&sp[0])} body
-	    return "{ $body; } sp += 2;"
+	    return "$body sp += 2;"
 	}
 	S2q? {
     	    regsub -all {\$1\.q} $body {getlong(\&sp[1])} body
 	    regsub -all {\$2} $body {sp[0]} body
-	    return "{ $body; } sp += 3;"
+	    return "$body sp += 3;"
 	}
 	S3q?? {
     	    regsub -all {\$1\.q} $body {getlong(\&sp[2])} body
 	    regsub -all {\$2} $body {sp[1]} body
 	    regsub -all {\$3} $body {sp[0]} body
-	    return "{ $body; } sp += 4;"
+	    return "$body sp += 4;"
 	}
 	T1 {
  	    regsub -all {\$1} $body {sp[0]} body
-	    return "{ $body; }"
+	    return "$body"
  	}
         T1d {
             regsub -all {\$1\.d} $body {get_double(\&sp[0])} body
-            return "{ $body; }"
+            return "$body"
         }
         T1q {
             regsub -all {\$1\.q} $body {get_long(\&sp[0])} body
-            return "{ $body; }"
+            return "$body"
         }
 	T2 {
 	    regsub -all {\$1} $body {sp[1]} body
 	    regsub -all {\$2} $body {sp[0]} body
-	    return "{ $body; } sp++;"
+	    return "$body sp++;"
 	}
         T2q {
             regsub -all {\$1\.q} $body {get_long(\&sp[0])} body
             regsub -all {\$2\.q} $body {get_long(\&sp[2])} body
-            return "{ $body; } sp += 2;"
+            return "$body sp += 2;"
         }
 	default {
 	    error "Bad key $key for $err_op"
@@ -529,8 +529,36 @@ proc gen_jitrules {f} {
     foreach i $instrs {
         if {[info exists jitrule($i)]} {
             set jrule $jitrule($i)
-            puts $f "case I_$i: $jrule; break;"
+            puts $f "case I_$i: $jrule break;"
         }
+    }
+}
+
+
+# SANITY CHECKS
+proc check-rhs {kind op rhs} {
+    global instrs status
+
+    foreach instr $rhs {
+        set i [lindex $instr 0]
+        if {[lsearch $instrs $i] < 0} {
+            puts "Instruction $i undefined in $kind $op"
+            set status 1
+        }
+    }
+}
+
+proc sanity {} {
+    global macro expand
+
+    # Assembler macros
+    foreach op [array names macro] {
+        check-rhs "macro" $op $macro($op)
+    }
+
+    # JIT expansions
+    foreach op [array names expand] {
+        check-rhs "expansion of" $op $expand($op)
     }
 }
 
@@ -538,6 +566,8 @@ proc gen_jitrules {f} {
 # MAIN PROGRAM
 
 readfile $infile
+
+sanity
 
 if {$status != 0} {exit $status}
 

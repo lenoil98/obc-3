@@ -390,12 +390,14 @@ static void op_rri(OPDECL, int rd, int rn, int imm) {
      vm_done();
 }
 
+#ifdef USE_MOVW
 // rd := op imm16
 static void op_ri16(OPDECL, int rd, int imm) {
      vm_debug2("%s %s, #%#x", mnem, regname[rd], imm);
      instr(op, reg(rd), (imm>>12)&0xf, imm12(imm));
      vm_done();
 }
+#endif
 
 // rd := rm shift rs
 static void shift_r(OPDECL, int rd, int rm, int rs) {
@@ -859,9 +861,6 @@ void vm_gen1i(operation op, int a) {
      vm_space(0);
 
      switch (op) {
-     case CALL:
-	  proc_call(const_reg(a)); break;
-
      case PREP:
 	  assert(a <= 3);
 	  argp = a;
@@ -871,6 +870,19 @@ void vm_gen1i(operation op, int a) {
           argp--;
           move_immed(R(argp), a);
           break;
+
+     default:
+	  badop();
+     }
+}
+
+void vm_gen1a(operation op, void *a) {
+     vm_debug1(op, 1, fmt_val(a));
+     vm_space(0);
+
+     switch (op) {
+     case CALL:
+       proc_call(const_reg((uint) a)); break;
 
      default:
 	  badop();
@@ -977,6 +989,22 @@ void vm_gen2ri(operation op, vmreg rega, int b) {
 
      default:
           vm_load_store_ri(op, ra, NOREG, b);
+     }
+}
+
+void vm_gen2ra(operation op, vmreg rega, void *b) {
+     int ra = rega->vr_reg;
+
+     vm_debug1(op, 2, rega->vr_name, fmt_val(b));
+     vm_space(0);
+
+     switch (op) {
+     case MOV: 
+	  move_immed(W(ra), (uint) b);
+          break;
+
+     default:
+	  badop();
      }
 }
 

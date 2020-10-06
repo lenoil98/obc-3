@@ -73,28 +73,37 @@ extern int vm_debug;
 
 /* Helper functions for the loader */
 
-module make_module(char *name, uchar *addr, int chksum, int nlines) {
-     module m = (module) scratch_alloc(sizeof(struct _module), FALSE, "module");
+void make_module(char *name, uchar *addr, int chksum, int nlines) {
+     module m = scratch_alloc_atomic(sizeof(struct _module));
+     static int nm = 0;
+
+     if (modtab == NULL)
+          modtab = scratch_alloc_atomic(nmods * sizeof(module));
+
      m->m_name = name;
      m->m_addr = addr;
 #ifdef PROFILE
      m->m_nlines = nlines;
      m->m_lcount = NULL;
      if (lflag && nlines > 0) {
-	  m->m_lcount = 
-	       (unsigned *) scratch_alloc(nlines * sizeof(unsigned),
-                                          TRUE, "line counts");
+	  m->m_lcount = scratch_alloc_atomic(nlines * sizeof(unsigned));
 	  memset(m->m_lcount, 0, nlines * sizeof(int));
      }
 #endif
 #ifdef OBXDEB
      debug_message("module %s %#x", name, chksum);
 #endif
-     return m;
+     if (nm >= nmods) panic("Too many modules");
+     modtab[nm++] = m;
 }
 
-proc make_proc(char *name, uchar *addr) {
-     proc p = (proc) scratch_alloc(sizeof(struct _proc), FALSE, "proc");
+void make_proc(char *name, uchar *addr) {
+     proc p = scratch_alloc_atomic(sizeof(struct _proc));
+     static int np = 0;
+
+     if (proctab == NULL)
+          proctab = scratch_alloc_atomic(nprocs * sizeof(proc));
+
      p->p_name = name;
      p->p_addr = (value *) addr;
 #ifdef PROFILE
@@ -105,7 +114,8 @@ proc make_proc(char *name, uchar *addr) {
      debug_message("proc %s %#x %#x %d", name, address(addr), 
 		   p->p_addr[CP_CODE].a, p->p_addr[CP_SIZE].i);
 #endif
-     return p;
+     if (np >= nprocs) panic("Too many procs");
+     proctab[np++] = p;
 }
 
 void make_symbol(const char *kind, char *name, uchar *addr) {
@@ -240,6 +250,9 @@ void stkoflo(value *bp) {
 
 /* Startup */
 
+#define argc saved_argc
+#define argv saved_argv
+
 static void run(value *prog) {
      value *sp;
 
@@ -253,6 +266,7 @@ static void run(value *prog) {
      primcall(prog, sp);
 }
 
+#ifndef PRELOAD
 mybool custom_file(char *name) {
      char buf[4];
      FILE *fp;
@@ -324,9 +338,6 @@ char *search_path(char *name) {
      return NULL;
 }
 #endif
-
-#define argc saved_argc
-#define argv saved_argv
 
 static char *progname;
 #ifdef PROFILE
@@ -438,6 +449,7 @@ static void print_profile(void) {
      if (fp != stderr) fclose(fp);
 }
 #endif
+#endif
 
 #ifdef JTEST
 static void jit_test(void) {
@@ -489,21 +501,23 @@ void NORETURN error_exit(int status) {
    prepared to search the shell path to find the bytefile. 
 
    These rules are modified a bit if a custom file is built for
-   profiling: in that case, we look for switches even in case (iii). */
+   profiling: in that case, we look for switches even in case (iii). 
+
+   Actually, there's a fourth way: linking the interpreter with a
+   "preloaded" image. */
 
 int main(int ac, char *av[]) {
-     FILE *fp;
-     char *codefile;
-
 #ifndef M64X32
      if (sizeof(uchar *) != 4) panic("Bad pointer size");
 #endif
 
      argc = ac; argv = av;
+
+#ifndef PRELOAD
      progname = argv[0];
 
      /* Read the command line first to handle -v */
-     codefile = search_path(argv[0]);
+     char *codefile = search_path(argv[0]);
      if (codefile != NULL && custom_file(codefile)) {
 #ifdef PROFILE
 	  char *prog = argv[0];
@@ -518,12 +532,13 @@ int main(int ac, char *av[]) {
 	  codefile = search_path(argv[0]);     
      }
 
+     if (codefile == NULL) panic("can't find %s", argv[0]);
+#endif
+
 #ifdef OBXDEB
      /* Now connect to the debugger process */
      debug_init();
 #endif
-
-     if (codefile == NULL) panic("can't find %s", argv[0]);
 
      gc_init();
 
@@ -538,10 +553,14 @@ int main(int ac, char *av[]) {
      dynstub = wrap_prim(dlstub);
 #endif
 
-     fp = fopen(codefile, "rb");
+#ifdef PRELOAD
+     load_image();
+#else
+     FILE *fp = fopen(codefile, "rb");
      if (fp == NULL) panic("can't open %s", codefile);
      load_file(fp);
      fclose(fp);
+#endif
 
 #ifdef TRACE
      if (dflag) dump();
@@ -588,8 +607,7 @@ word wrap_prim(primitive *prim) {
 #ifndef M64X32
      return (word) prim;
 #else
-     primitive **wrapper =
-          (primitive **) scratch_alloc(sizeof(primitive *), TRUE, "wrapper");
+     primitive **wrapper = scratch_alloc_atomic(sizeof(primitive *));
      *wrapper = prim;
      return address(wrapper);
 #endif

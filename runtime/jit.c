@@ -92,11 +92,6 @@ static uchar *pcbase, *pclimit;	/* Code addresses */
 
 static vmlabel stack_oflo, retlab;
 
-#define push_con(k) push(V_CON, INT, k, NULL, 1)
-#define push_reg(r) push(V_REG, INT, 0, r, 1)
-#define konst(op, ty, i, s) push(op, ty, 4*(CP_CONST+i), NULL, s)
-#define local(i)  push(V_ADDR, INT, i, rBP, 1)
-
 /* prolog -- generate code for procedure prologue */
 static word prolog(const char *name) {
      int frame = jit_cxt[CP_FRAME].i;
@@ -142,8 +137,8 @@ static word prolog(const char *name) {
 static int stack_map(uchar *pc) {
      value *r = valptr(jit_cxt[CP_STKMAP]);
      if (r == NULL) return 0;
-     while (pointer(r[0]) != NULL) {
-	  if (pointer(r[0]) == pc) return r[1].i;
+     while (r[0].a != 0) {
+	  if (codeptr(r[0]) == pc) return r[1].i;
 	  r += 2;
      }
      return 0;
@@ -446,7 +441,7 @@ static void loadq(void) {
         allocating at least one register.  So we're cautious about
         letting it remain unevaluated on the stack if it uses an 
         index register. */
-     deref(V_MEMQ, INT, 2); 
+     deref(V_MEMQ, INT, 2, 0); 
 #ifndef M64X32
      ctvalue v = peek(1);
      if (v->v_reg != NULL && member(v->v_reg, INT)
@@ -459,6 +454,11 @@ static void dupe(int n) {
      ctvalue v = move_from_frame(n);
      pushx(v->v_op, v->v_type, v->v_val, v->v_reg, v->v_reg2,
            v->v_scale, v->v_size);
+}
+
+static void statlink(void) {
+     push_sp();
+     store(V_MEMW, 1, 4*(1-HEAD+SL));
 }
 
 /* instr -- translate one bytecode instruction */
@@ -863,7 +863,7 @@ void jit_compile(value *cp) {
 #endif
 
      jit_cxt = cp; 
-     pcbase = pointer(jit_cxt[CP_CODE]);
+     pcbase = codeptr(jit_cxt[CP_CODE]);
      pclimit = pcbase + jit_cxt[CP_SIZE].i;
 
      init_regs();

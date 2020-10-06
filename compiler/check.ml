@@ -30,6 +30,7 @@
 
 open Tree
 open Symtab
+open Symfile
 open Dict
 open Gcmap
 open Mach
@@ -253,6 +254,18 @@ let check_method md ms0 table vsize =
   end;
   make_method table md
 
+let check_concrete d t loc =
+  let p = get_proc d.d_type in
+  if p.p_kind = AbsMeth then begin
+    (* Check that p is not an abstract method erroneously added to a
+       non-abstract record type. *)
+    let fp = List.hd p.p_fparams in
+    if not (same_types fp.d_type t) then
+      sem_error
+        "$ should implement abstract method '$' or be declared abstract itself"
+        [fOType t; fId d.d_tag] loc
+  end
+
 let check_methods t =
   if is_record t then begin
     let r = get_record t in
@@ -266,6 +279,8 @@ let check_methods t =
     List.iter (fun md -> check_method md ms0 table vsize) r.r_methods;
     let h = function Some d -> d | None -> failwith "check_methods" in
     r.r_methods <- List.map h (Growvect.to_list table);
+    if not r.r_abstract then
+      List.iter (fun d -> check_concrete d t r.r_loc) r.r_methods;
     if !Config.debug > 0 then 
       printf "! $ now has methods $\n" 
 	[fId t.t_name; fList(fMeth) r.r_methods]
@@ -714,8 +729,7 @@ and check_typecons tx name env lzy =
 	    | None -> (voidtype, []) in
 	let env' = add_block fields0 env in
 	check_decls fields env' (upward_alloc offset) lzy;
-	align max_align offset;
-	new_type !level (record abs pt !offset (top_block env'))
+	new_type !level (record abs pt tx.tx_loc !offset (top_block env'))
     | Proc heading ->
 	let d = 
 	  check_heading Procedure (makeDefId (anon, Private, no_loc)) 
@@ -754,8 +768,13 @@ and check_decl d env alloc lzy =
 		sem_error "an open array type is not allowed here" 
 		  [] tx.tx_loc;
 		sem_type t
-	      end
+	      end;
 	end;
+
+        if kind <> VParamDef && is_abstract t then
+          sem_error "cannot declare instance of abstract record type"
+            [] tx.tx_loc;
+
         let def x = 
 	  begin match kind with
 	      (ParamDef | CParamDef | VParamDef) ->
@@ -909,13 +928,15 @@ let check_import (int, ext, stamp) env =
       [] int.x_loc
   else begin
     try
-      let (env', st, doc) = 
-	if ext = intern_sys "SYSTEM" then
-	  (sysenv (), 0, None)
-	else 
-	  Symfile.import
-	    (Util.search_path (extern ext ^ ".k") !Config.libpath) in
-      stamp := st;
+      let env' =
+        if ext = intern_sys "SYSTEM" then begin
+           stamp := 0; sysenv ()
+        end else begin
+        let symfile = Symfile.import ext in
+
+           stamp := symfile.y_checksum;
+           symfile.y_env
+        end in
       add_def (make_def int (ModDef (ext, env')) voidtype None) env
     with Not_found ->
       sem_error "the interface file for '$' cannot be found" 
@@ -943,7 +964,7 @@ let annotate (Module (m, imports, body, glodefs, doc)) =
 	  level := 0;
 	  align max_align fsize;
 
-	  let globals = top_block glo_env in
+          let globals = top_block glo_env in
 	  check_used globals;
 	  glodefs := globals;
 

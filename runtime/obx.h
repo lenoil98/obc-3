@@ -60,6 +60,12 @@ union value {
 #define address(p) ((word) (ptrtype) (p))
 #define ptrcast(t, a) ((t *) (ptrtype) (a))
 
+#define codeaddr(p) ((p) - imem)
+#define codeptr(v) (imem + (v).a)
+
+#define codeaddr(p) ((p) - imem)
+#define codeptr(v) (imem + (v).a)
+
 typedef struct _proc *proc;
 typedef struct _module *module;
 typedef struct _arc *arc;
@@ -214,13 +220,12 @@ void dbl_zcheck(value *sp);
 
 word wrap_prim(primitive *prim);
 
-/* dynlink.c */
-
 /* load_file -- load a file of object code */
 void load_file(FILE *bfp);
+void load_image(void);
 
-module make_module(char *name, uchar *addr, int chsum, int nlines);
-proc make_proc(char *name, uchar *addr);
+void make_module(char *name, uchar *addr, int chsum, int nlines);
+void make_proc(char *name, uchar *addr);
 void make_symbol(const char *kind, char *name, uchar *addr);
 
 void panic(const char *, ...);
@@ -266,10 +271,13 @@ uchar *getenvt(int word);
 /* gc.c */
 
 /* scratch_alloc -- allocate memory that will not be freed */
-void *scratch_alloc(unsigned bytes, mybool atomic, const char *reason);
+void *scratch_alloc(unsigned bytes);
+
+/* scratch_alloc_atomic -- allocate memory that will not contain pointers */
+void *scratch_alloc_atomic(unsigned bytes);
 
 /* gc_alloc -- allocate an object on the managed heap */
-void *gc_alloc(value *desc, unsigned size, value *sp);
+void *gc_alloc(unsigned size, value *sp);
 
 /* gc_collect -- run the garbage collector */
 void gc_collect(value *sp);

@@ -52,7 +52,7 @@ END tLen207.
 >>*)
 
 (*[[
-!! (SYMFILE #tLen207 STAMP #tLen207.%main 1)
+!! (SYMFILE #tLen207 STAMP #tLen207.%main 1 #tLen207.m)
 !! (CHKSUM STAMP)
 !! 
 MODULE tLen207 STAMP 0
@@ -139,7 +139,7 @@ CALL 0
 RETURN
 END
 
-PROC tLen207.S 0 3 0x00100001
+PROC tLen207.S 0 4 0x00100001
 ! PROCEDURE S(p: f);
 !   Out.Int(LEN(p^), 0); Out.Ln
 CONST 0

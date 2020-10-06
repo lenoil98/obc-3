@@ -426,8 +426,7 @@ void spill(reg r) {
                     int c = *rc;
 
                     if (tmp == 0)
-                         tmp = address(scratch_alloc(sizeof(double),
-                                                     FALSE, "JIT spill temp"));
+                         tmp = address(scratch_alloc(sizeof(double)));
                     if (!saved) {
                          vm_gen(choose(v->v_size, STW, STQ), r->r_reg, tmp);
                          saved = TRUE;
@@ -619,10 +618,15 @@ ctvalue fix_const(int i, mybool rflag) {
 }
 
 /* deref -- perform load operation on top of stack */
-void deref(valkind vkind, int ty, int size) {
-     ctvalue v = peek(1);
+void deref(valkind vkind, int ty, int size, int off) {
+     ctvalue v;
      reg r1;
 
+     if (off != 0) {
+          push_con(off); add_offset(0);
+     }
+
+     v = peek(1);
      switch (v->v_op) {
      case V_ADDR:
 #ifndef M64X32
@@ -668,12 +672,12 @@ static void unalias(int a, ctvalue v) {
 }
 
 /* store -- perform store operation on top of stack */
-void store(valkind vkind, int s) {
+void store(valkind vkind, int s, int off) {
      reg r1;
-     ctvalue v = &vstack[sp-1];
+     ctvalue v = peek(1);
      int ty = v->v_type;
 
-     deref(vkind, vstack[sp-2].v_type, s);
+     deref(vkind, vstack[sp-2].v_type, s, off);
      if (same(v, &vstack[sp-2])) {
 	  /* Store into same location as load: mostly for
 	     SLIDEW / RESULTW */
@@ -772,34 +776,10 @@ static void gen_args(int n) {
      pop(n);
 }
 
-#ifndef M64X32
-#define func_wrapper(f) ((word) (f))
-#else
-// Only a few wrappers are generally needed on amd64, but we
-// allow extra room to allow experiments with soft float
-
-#define NWRAP 128
-
-static word wrapper[NWRAP];
-static void *wrfunc[NWRAP];
-int nwrap = 0;
-
-word func_wrapper(void *f) {
-     for (int i = 0; i < nwrap; i++)
-          if (wrfunc[i] == f) return wrapper[i];
-
-     assert(nwrap < NWRAP);
-     int j = nwrap++;
-     word w = vm_wrap(f);
-     wrapper[j] = w; wrfunc[j] = f;
-     return w;
-}
-#endif
-
 /* gcall -- call with arguments on stack */
 void gcall(void *f, int n) {
      gen_args(n);
-     vm_gen(CALL, func_wrapper(f));
+     vm_gen(CALL, f);
 }
 
 /* gcallr -- indirect function call */

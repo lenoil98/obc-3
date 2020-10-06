@@ -148,7 +148,9 @@ static void scan(char *name, mybool islib)  {
 static void scan_files(void) {
      if (stdlib) {
           char buf[128];
-	  sprintf(buf, "%s%s%s", libdir, DIRSEP, lscript);
+
+	  if (snprintf(buf, 128, "%s%s%s", libdir, DIRSEP, lscript) < 0)
+               panic("lscript path truncated");
           FILE *fp = fopen(buf, "r");
 	  if (fp == NULL) {
 	       perror(buf);
@@ -157,7 +159,8 @@ static void scan_files(void) {
 
 	  while (fgets(line, MAXLINE, fp) != NULL) {
 	       line[strlen(line)-1] = '\0';
-	       sprintf(buf, "%s%s%s", libdir, DIRSEP, line);
+	       if (snprintf(buf, 128, "%s%s%s", libdir, DIRSEP, line) < 0)
+                    panic("library path truncated");
 	       scan(must_strdup(buf), TRUE);
 	  }
 
@@ -270,7 +273,7 @@ static struct option longopts[] = {
 /* get_options -- analyse arguments */
 static void get_options(int argc, char **argv) {
      for (;;) {
-	  int c = getopt_long_only(argc, argv, "dvsgCi:L:R:o:k:", 
+	  int c = getopt_long_only(argc, argv, "dvsgCpi:L:R:o:k:", 
 				   longopts, NULL);
 
 	  if (c == -1) break;
@@ -288,6 +291,8 @@ static void get_options(int argc, char **argv) {
 	       gflag = TRUE; break;
           case 'C':
                custom = TRUE; break;
+          case 'p':
+               preload = TRUE; break;
 	  case 'i':
 	       interp = optarg; break;
 	  case 'L':
@@ -359,7 +364,7 @@ int main(int argc, char **argv) {
 	  save_string("LIBDIR", rtlibdir);
      end_linking();
 
-     if (custom)
+     if (custom && !preload)
           dump_prims();
 
      return status;
